@@ -8,7 +8,6 @@ from langchain_core.output_parsers import StrOutputParser
 from abc import ABC, abstractmethod
 from operator import itemgetter
 
-
 class RetrievalChain(ABC):
     def __init__(self):
         self.source_uri = None

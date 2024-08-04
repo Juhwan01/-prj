@@ -4,9 +4,10 @@ load_dotenv()
 
 from rag.pdf import PDFRetrievalChain
 
-pdf = PDFRetrievalChain(["test.pdf"]).create_chain()
+pdf = PDFRetrievalChain(["test1.pdf"]).create_chain()
 pdf_retriever = pdf.retriever
 pdf_chain = pdf.chain
+
 
 from typing import TypedDict
 
@@ -23,8 +24,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.tools.tavily_search import TavilySearchResults
-from rag.utils import format_docs, format_searched_docs
+from rag.utils import *
+from langchain import hub
 
+pdf_text=load_doc("test1.pdf")
+pdf_text="The game we develop is a digital therapy tool for early dyslexia treatment for elementary school students. The table of contents is as you see on the screen.Dyslexia is one of the most common learning disabilities. It primarily affects a person's ability to recognize letters and words accurately when reading or writing. Dyslexia affects around 80% of all people identified as having a learning disability, and particularly affects around 10% of school-aged children. Dyslexia also cause emotional and psychological problems in adults due to difficulties in communication.Early treatment for dyslexia is important as it have a serious impact on users future potential. Therapy should feel like playing for users to be effective. This means it should be enjoyable and engaging, turning challenges into fun activities. Our team believed that while the functional aspects of the game were important, it would be more meaningful if people used it a lot. Our cute UI design for elementary school students effectively encouraged our target audience to frequently engage with the app. The functional aspects of our games are rooted in thesis and are specifically designed to address dyslexia in a fun and effective way. Let’s learn more about our game in detail."
 # 업스테이지 문서 관련성 체크 기능을 설정합니다. https://upstage.ai
 upstage_ground_checker = UpstageGroundednessCheck()
 
@@ -51,6 +55,19 @@ def llm_answer(state: GraphState) -> GraphState:
 
     return GraphState(answer=response)
 
+def qMaker(state):
+    prompt = hub.pull("aaalexlit/context-based-question-generation")
+    # Question rewriting model
+    model = ChatOpenAI(temperature=0.7, model="gpt-4")
+
+    chain = prompt | model | StrOutputParser()
+    
+    response = chain.invoke(
+        {"num_questions": 5,"context_str": pdf_text}
+    )
+    print(state["question"])
+    return GraphState(question=response)
+    
 
 def rewrite(state):
     question = state["question"]
@@ -134,28 +151,29 @@ workflow.add_node(
 )  # 답변의 문서에 대한 관련성 체크 노드를 추가합니다.
 # workflow.add_node("rewrite", rewrite)  # 질문을 재작성하는 노드를 추가합니다.
 workflow.add_node("search_on_web", search_on_web)  # 웹 검색 노드를 추가합니다.
-workflow.add_node("requestion", resetQ)
+# workflow.add_node("requestion", resetQ)
+workflow.add_node("qmaker",qMaker)
 
 # 각 노드들을 연결합니다.
 workflow.add_edge("retrieve", "llm_answer")  # 검색 -> 답변
 workflow.add_edge("llm_answer", "relevance_check")  # 답변 -> 관련성 체크
 # workflow.add_edge("rewrite", "search_on_web")  # 재작성 -> 관련성 체크
 workflow.add_edge("search_on_web", "llm_answer")  # 웹 검색 -> 답변
-workflow.add_edge("requestion", "retrieve")  # 웹 검색 -> 답변
+workflow.add_edge("qmaker", "retrieve")  # 웹 검색 -> 답변
 
 # 조건부 엣지를 추가합니다.
 workflow.add_conditional_edges(
     "relevance_check",  # 관련성 체크 노드에서 나온 결과를 is_relevant 함수에 전달합니다.
     is_relevant,
     {
-        "grounded": "requestion",  # 관련성이 있으면 종료합니다.
+        "grounded": END,  # 관련성이 있으면 종료합니다.
         "notGrounded": "search_on_web",  # 관련성이 없으면 다시 답변을 생성합니다.
         "notSure": "search_on_web",  # 관련성 체크 결과가 모호하다면 다시 답변을 생성합니다.
     },
 )
 
 
-workflow.set_entry_point("requestion")
+workflow.set_entry_point("qmaker")
 
 memory = MemorySaver()
 
