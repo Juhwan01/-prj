@@ -61,3 +61,16 @@ def load_doc(source_uri):
         text = page.extract_text()
         text_all.append(text)
     return text_all
+
+from langchain_openai import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
+from langchain import hub
+
+def qChain():
+    prompt = hub.pull("aaalexlit/context-based-question-generation")
+    # Question rewriting model
+    model = ChatOpenAI(temperature=0.7, model="gpt-4")
+
+    chain = prompt | model | StrOutputParser()
+    
+    return chain

@@ -3,10 +3,14 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.output_parsers import StrOutputParser
 from langchain_upstage import UpstageEmbeddings
 from langchain_openai import ChatOpenAI
-
+from langchain_anthropic import ChatAnthropic
 from langchain_core.output_parsers import StrOutputParser
 from abc import ABC, abstractmethod
 from operator import itemgetter
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableParallel, RunnableSequence
+
 
 class RetrievalChain(ABC):
     def __init__(self):
@@ -43,15 +47,16 @@ class RetrievalChain(ABC):
         return dense_retriever
 
     def create_model(self):
-        return ChatOpenAI(model_name="gpt-4-turbo", temperature=0)
+        return ChatAnthropic(model_name="claude-3-5-sonnet-20240620")
 
     def create_prompt(self):
-        return hub.pull("teddynote/rag-korean-with-source")
-
+        prompt = hub.pull("miracle/par_grading_documents_prompt_public")
+        return prompt
+    
     @staticmethod
     def format_docs(docs):
         return "\n".join(docs)
-
+    
     def create_chain(self):
         docs = self.load_documents(self.source_uri)
         text_splitter = self.create_text_splitter()
@@ -60,10 +65,18 @@ class RetrievalChain(ABC):
         self.retriever = self.create_retriever(self.vectorstore)
         model = self.create_model()
         prompt = self.create_prompt()
-        self.chain = (
-            {"question": itemgetter("question"), "context": itemgetter("context")}
+        chain = RunnableSequence(
+            {
+                "documents": itemgetter("context"),
+                "question": itemgetter("question"),
+            }
             | prompt
             | model
             | StrOutputParser()
         )
+        self.chain = chain
         return self
+    
+    
+
+    

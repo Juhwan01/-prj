@@ -7,8 +7,6 @@ from rag.pdf import PDFRetrievalChain
 pdf = PDFRetrievalChain(["test1.pdf"]).create_chain()
 pdf_retriever = pdf.retriever
 pdf_chain = pdf.chain
-
-
 from typing import TypedDict
 
 
@@ -18,6 +16,7 @@ class GraphState(TypedDict):
     context: str  # 문서의 검색 결과
     answer: str  # 답변
     relevance: str  # 답변의 문서에 대한 관련성
+    text: str # 본문
     
 from langchain_upstage import UpstageGroundednessCheck
 from langchain_core.prompts import ChatPromptTemplate
@@ -27,12 +26,10 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 from rag.utils import *
 from langchain import hub
 
-pdf_text=load_doc("test1.pdf")
-pdf_text="The game we develop is a digital therapy tool for early dyslexia treatment for elementary school students. The table of contents is as you see on the screen.Dyslexia is one of the most common learning disabilities. It primarily affects a person's ability to recognize letters and words accurately when reading or writing. Dyslexia affects around 80% of all people identified as having a learning disability, and particularly affects around 10% of school-aged children. Dyslexia also cause emotional and psychological problems in adults due to difficulties in communication.Early treatment for dyslexia is important as it have a serious impact on users future potential. Therapy should feel like playing for users to be effective. This means it should be enjoyable and engaging, turning challenges into fun activities. Our team believed that while the functional aspects of the game were important, it would be more meaningful if people used it a lot. Our cute UI design for elementary school students effectively encouraged our target audience to frequently engage with the app. The functional aspects of our games are rooted in thesis and are specifically designed to address dyslexia in a fun and effective way. Let’s learn more about our game in detail."
 # 업스테이지 문서 관련성 체크 기능을 설정합니다. https://upstage.ai
 upstage_ground_checker = UpstageGroundednessCheck()
 
-
+qchain=qChain()
 # 문서에서 검색하여 관련성 있는 문서를 찾습니다.
 def retrieve_document(state: GraphState) -> GraphState:
     # 문서에서 검색하여 관련성 있는 문서를 찾습니다.
@@ -49,23 +46,15 @@ def retrieve_document(state: GraphState) -> GraphState:
 def llm_answer(state: GraphState) -> GraphState:
     question = state["question"]
     context = state["context"]
-
+    
     # 체인을 호출하여 답변을 생성합니다.
     response = pdf_chain.invoke({"question": question, "context": context})
-
     return GraphState(answer=response)
 
 def qMaker(state):
-    prompt = hub.pull("aaalexlit/context-based-question-generation")
-    # Question rewriting model
-    model = ChatOpenAI(temperature=0.7, model="gpt-4")
-
-    chain = prompt | model | StrOutputParser()
-    
-    response = chain.invoke(
-        {"num_questions": 5,"context_str": pdf_text}
+    response = qchain.invoke(
+        {"num_questions": 1,"context_str": state["text"]}
     )
-    print(state["question"])
     return GraphState(question=response)
     
 
@@ -101,21 +90,20 @@ def rewrite(state):
     return GraphState(question=response)
 
 
-def search_on_web(state: GraphState) -> GraphState:
-    # 문서에서 검색하여 관련성 있는 문서를 찾습니다.
-    search_tool = TavilySearchResults(max_results=5)
-    search_result = search_tool.invoke({"query": state["question"]})
+# def search_on_web(state: GraphState) -> GraphState:
+#     # 문서에서 검색하여 관련성 있는 문서를 찾습니다.
+#     search_tool = TavilySearchResults(max_results=5)
+#     search_result = search_tool.invoke({"query": state["question"]})
 
-    # 검색된 문서를 형식화합니다.
-    search_result = format_searched_docs(search_result)
-    # 검색된 문서를 context 키에 저장합니다.
-    return GraphState(
-        context=search_result,
-    )
+#     # 검색된 문서를 형식화합니다.
+#     search_result = format_searched_docs(search_result)
+#     # 검색된 문서를 context 키에 저장합니다.
+#     return GraphState(
+#         context=search_result,
+#     )
 
 
 def relevance_check(state: GraphState) -> GraphState:
-    print("relevance_check", state)
     # 관련성 체크를 실행합니다. 결과: grounded, notGrounded, notSure
     response = upstage_ground_checker.run(
         {"context": state["context"], "answer": state["answer"]}
@@ -128,14 +116,6 @@ def relevance_check(state: GraphState) -> GraphState:
 def is_relevant(state: GraphState) -> GraphState:
     return state["relevance"]
 
-def resetQ(state: GraphState) -> GraphState:
-    if state["answer"]:
-        print(state["answer"])
-        print(state["relevance"])
-    query=input("질문 입력ㄱㄱ : ")
-    return GraphState(
-        question=query
-    )
 
 from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
@@ -149,16 +129,16 @@ workflow.add_node("llm_answer", llm_answer)  # 정보 검색 노드를 추가합
 workflow.add_node(
     "relevance_check", relevance_check
 )  # 답변의 문서에 대한 관련성 체크 노드를 추가합니다.
-# workflow.add_node("rewrite", rewrite)  # 질문을 재작성하는 노드를 추가합니다.
-workflow.add_node("search_on_web", search_on_web)  # 웹 검색 노드를 추가합니다.
+workflow.add_node("rewrite", rewrite)  # 질문을 재작성하는 노드를 추가합니다.
+# workflow.add_node("search_on_web", search_on_web)  # 웹 검색 노드를 추가합니다.
 # workflow.add_node("requestion", resetQ)
 workflow.add_node("qmaker",qMaker)
 
 # 각 노드들을 연결합니다.
 workflow.add_edge("retrieve", "llm_answer")  # 검색 -> 답변
 workflow.add_edge("llm_answer", "relevance_check")  # 답변 -> 관련성 체크
-# workflow.add_edge("rewrite", "search_on_web")  # 재작성 -> 관련성 체크
-workflow.add_edge("search_on_web", "llm_answer")  # 웹 검색 -> 답변
+workflow.add_edge("rewrite", "retrieve")  # 재작성 -> 관련성 체크
+# workflow.add_edge("search_on_web", "llm_answer")  # 웹 검색 -> 답변
 workflow.add_edge("qmaker", "retrieve")  # 웹 검색 -> 답변
 
 # 조건부 엣지를 추가합니다.
@@ -167,8 +147,8 @@ workflow.add_conditional_edges(
     is_relevant,
     {
         "grounded": END,  # 관련성이 있으면 종료합니다.
-        "notGrounded": "search_on_web",  # 관련성이 없으면 다시 답변을 생성합니다.
-        "notSure": "search_on_web",  # 관련성 체크 결과가 모호하다면 다시 답변을 생성합니다.
+        "notGrounded": "rewrite",  # 관련성이 없으면 다시 답변을 생성합니다.
+        "notSure": "rewrite",  # 관련성 체크 결과가 모호하다면 다시 답변을 생성합니다.
     },
 )
 
@@ -185,6 +165,6 @@ config = RunnableConfig(
     recursion_limit=100, configurable={"thread_id": "CORRECTIVE-SEARCH-RAG"}
 )
 inputs = GraphState(
-    question=""
+    text=load_doc("test1.pdf")
 )
 app.invoke(inputs,config=config)
