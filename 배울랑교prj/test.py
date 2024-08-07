@@ -49,6 +49,8 @@ def llm_answer(state: GraphState) -> GraphState:
     
     # 체인을 호출하여 답변을 생성합니다.
     response = pdf_chain.invoke({"question": question, "context": context})
+    print(state["question"])
+    print(response)
     return GraphState(answer=response)
 
 def qMaker(state):
@@ -81,7 +83,7 @@ def rewrite(state):
     )
 
     # Question rewriting model
-    model = ChatOpenAI(temperature=0, model="gpt-4-turbo")
+    model = ChatOpenAI(temperature=0, model="gpt-4o-2024-08-06")
 
     chain = prompt | model | StrOutputParser()
     response = chain.invoke(
