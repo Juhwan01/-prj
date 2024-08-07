@@ -10,7 +10,11 @@ from operator import itemgetter
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableParallel, RunnableSequence
+from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain.output_parsers import PydanticOutputParser
 
+class AnswerOutput(BaseModel):
+    answer: str = Field(description="The answer to the question")
 
 class RetrievalChain(ABC):
     def __init__(self):
@@ -47,7 +51,7 @@ class RetrievalChain(ABC):
         return dense_retriever
 
     def create_model(self):
-        return ChatAnthropic(model_name="claude-3-5-sonnet-20240620")
+        return ChatOpenAI(model_name="gpt-4o-2024-08-06", temperature=0)
 
     def create_prompt(self):
         prompt = hub.pull("miracle/par_grading_documents_prompt_public")
@@ -57,6 +61,8 @@ class RetrievalChain(ABC):
     def format_docs(docs):
         return "\n".join(docs)
     
+    
+
     def create_chain(self):
         docs = self.load_documents(self.source_uri)
         text_splitter = self.create_text_splitter()
@@ -65,16 +71,13 @@ class RetrievalChain(ABC):
         self.retriever = self.create_retriever(self.vectorstore)
         model = self.create_model()
         prompt = self.create_prompt()
-        chain = RunnableSequence(
-            {
-                "documents": itemgetter("context"),
-                "question": itemgetter("question"),
-            }
+        output_parser = PydanticOutputParser(pydantic_object=AnswerOutput)
+        self.chain = (
+            {"question": itemgetter("question"), "documents": itemgetter("context")}
             | prompt
             | model
             | StrOutputParser()
         )
-        self.chain = chain
         return self
     
     

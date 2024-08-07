@@ -10,6 +10,7 @@ pdf_chain = pdf.chain
 from typing import TypedDict
 
 
+
 # GraphState 상태를 저장하는 용도로 사용합니다.
 class GraphState(TypedDict):
     question: str  # 질문
@@ -42,16 +43,35 @@ def retrieve_document(state: GraphState) -> GraphState:
     return GraphState(context=retrieved_docs)
 
 
+
+
+
 # LLM을 사용하여 답변을 생성합니다.
 def llm_answer(state: GraphState) -> GraphState:
     question = state["question"]
     context = state["context"]
     
-    # 체인을 호출하여 답변을 생성합니다.
-    response = pdf_chain.invoke({"question": question, "context": context})
+     # Question rewriting model
+    model = ChatOpenAI(temperature=0, model="gpt-4o-2024-08-06")
+    prompt = hub.pull("lings/answer-generator")
+    chain = prompt | model | StrOutputParser()
+    response = chain.invoke(
+        {"question": question, "examContext": context}
+    )
     print(state["question"])
     print(response)
     return GraphState(answer=response)
+
+
+# LLM을 사용하여 답변 생성 가능성 체크
+def docChecker(state: GraphState) -> GraphState:
+    question = state["question"]
+    context = state["context"]
+    
+    # 체인을 호출하여 답변을 생성합니다.
+    response = pdf_chain.invoke({"question": question, "context": context})
+    return GraphState(relevance=response)
+
 
 def qMaker(state):
     response = qchain.invoke(
@@ -130,19 +150,33 @@ workflow.add_node("retrieve", retrieve_document)  # 에이전트 노드를 추�
 workflow.add_node("llm_answer", llm_answer)  # 정보 검색 노드를 추가합니다.
 workflow.add_node(
     "relevance_check", relevance_check
-)  # 답변의 문서에 대한 관련성 체크 노드를 추가합니다.
+)  # 답변의 문서에 대한 관련성 체크 노드를 추가합니다.\
+workflow.add_node("doccheck",docChecker) # 답변 생성 가능성 검사
 workflow.add_node("rewrite", rewrite)  # 질문을 재작성하는 노드를 추가합니다.
 # workflow.add_node("search_on_web", search_on_web)  # 웹 검색 노드를 추가합니다.
 # workflow.add_node("requestion", resetQ)
 workflow.add_node("qmaker",qMaker)
 
+
+
+
+
 # 각 노드들을 연결합니다.
-workflow.add_edge("retrieve", "llm_answer")  # 검색 -> 답변
+workflow.add_edge("retrieve", "doccheck")  # 검색 -> 답변
 workflow.add_edge("llm_answer", "relevance_check")  # 답변 -> 관련성 체크
 workflow.add_edge("rewrite", "retrieve")  # 재작성 -> 관련성 체크
 # workflow.add_edge("search_on_web", "llm_answer")  # 웹 검색 -> 답변
 workflow.add_edge("qmaker", "retrieve")  # 웹 검색 -> 답변
 
+# 조건부 엣지를 추가합니다.
+workflow.add_conditional_edges(
+    "doccheck",  # 관련성 체크 노드에서 나온 결과를 is_relevant 함수에 전달합니다.
+    is_relevant,
+    {
+        "yes": "llm_answer",  # 생성 가능하다면
+        "no": "retrieve",  # 생성 불가능 하다면
+    },
+)
 # 조건부 엣지를 추가합니다.
 workflow.add_conditional_edges(
     "relevance_check",  # 관련성 체크 노드에서 나온 결과를 is_relevant 함수에 전달합니다.
