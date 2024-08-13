@@ -71,7 +71,6 @@ class RetrievalChain(ABC):
         self.retriever = self.create_retriever(self.vectorstore)
         model = self.create_model()
         prompt = self.create_prompt()
-        output_parser = PydanticOutputParser(pydantic_object=AnswerOutput)
         self.chain = (
             {"question": itemgetter("question"), "documents": itemgetter("context")}
             | prompt
