@@ -1,0 +1,8 @@
+The main purpose of the game is to provide a functional digital therapy for early treatment of dyslexia in school-aged children.  
+
+Besides affecting reading and writing skills, dyslexia can influence interpersonal relationships, work life, and lead to emotional and psychological issues such as low self-esteem.  
+
+The game incorporates a cute user interface (UI) to engage children and encourage frequent use.  
+
+The therapy is designed to feel like playing, making it a fun and effective way to treat dyslexia.
+
