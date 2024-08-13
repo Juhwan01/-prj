@@ -69,7 +69,7 @@ from langchain import hub
 def qChain():
     prompt = hub.pull("aaalexlit/context-based-question-generation")
     # Question rewriting model
-    model = ChatOpenAI(temperature=0.7, model="gpt-4")
+    model = ChatOpenAI(temperature=0.7, model="gpt-4o")
 
     chain = prompt | model | StrOutputParser()
     
