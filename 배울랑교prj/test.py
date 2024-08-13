@@ -4,7 +4,7 @@ load_dotenv()
 
 from rag.pdf import PDFRetrievalChain
 
-pdf = PDFRetrievalChain(["test1.pdf"]).create_chain()
+pdf = PDFRetrievalChain(["배울랑교prj/testcheck.pdf"]).create_chain()
 pdf_retriever = pdf.retriever
 pdf_chain = pdf.chain
 from typing import TypedDict
@@ -45,7 +45,6 @@ def retrieve_document(state: GraphState) -> GraphState:
 
 
 
-
 # LLM을 사용하여 답변을 생성합니다.
 def llm_answer(state: GraphState) -> GraphState:
     question = state["question"]
@@ -75,7 +74,7 @@ def docChecker(state: GraphState) -> GraphState:
 
 def qMaker(state):
     response = qchain.invoke(
-        {"num_questions": 1,"context_str": state["text"]}
+        {"num_questions": 10,"context_str": state["text"]}
     )
     return GraphState(question=response)
     
@@ -125,13 +124,22 @@ def rewrite(state):
 #     )
 
 
-def relevance_check(state: GraphState) -> GraphState:
+def a_relevance_check(state: GraphState) -> GraphState:
     # 관련성 체크를 실행합니다. 결과: grounded, notGrounded, notSure
     response = upstage_ground_checker.run(
         {"context": state["context"], "answer": state["answer"]}
     )
     return GraphState(
         relevance=response, question=state["question"], answer=state["answer"]
+    )
+
+def q_relevance_check(state: GraphState) -> GraphState:
+    # 관련성 체크를 실행합니다. 결과: grounded, notGrounded, notSure
+    response = upstage_ground_checker.run(
+        {"context": state["text"], "answer": state["question"]}
+    )
+    return GraphState(
+        relevance=response, question=state["question"]
     )
 
 
@@ -149,10 +157,13 @@ workflow = StateGraph(GraphState)
 workflow.add_node("retrieve", retrieve_document)  # 에이전트 노드를 추가합니다.
 workflow.add_node("llm_answer", llm_answer)  # 정보 검색 노드를 추가합니다.
 workflow.add_node(
-    "relevance_check", relevance_check
+    "a_relevance_check", a_relevance_check
 )  # 답변의 문서에 대한 관련성 체크 노드를 추가합니다.\
+workflow.add_node(
+    "q_relevance_check", q_relevance_check
+) 
 workflow.add_node("doccheck",docChecker) # 답변 생성 가능성 검사
-workflow.add_node("rewrite", rewrite)  # 질문을 재작성하는 노드를 추가합니다.
+# workflow.add_node("rewrite", rewrite)  # 질문을 재작성하는 노드를 추가합니다.
 # workflow.add_node("search_on_web", search_on_web)  # 웹 검색 노드를 추가합니다.
 # workflow.add_node("requestion", resetQ)
 workflow.add_node("qmaker",qMaker)
@@ -163,10 +174,11 @@ workflow.add_node("qmaker",qMaker)
 
 # 각 노드들을 연결합니다.
 workflow.add_edge("retrieve", "doccheck")  # 검색 -> 답변
-workflow.add_edge("llm_answer", "relevance_check")  # 답변 -> 관련성 체크
-workflow.add_edge("rewrite", "retrieve")  # 재작성 -> 관련성 체크
+workflow.add_edge("llm_answer", "a_relevance_check")  # 답변 -> 관련성 체크
+# workflow.add_edge("rewrite", "retrieve")  # 재작성 -> 관련성 체크
 # workflow.add_edge("search_on_web", "llm_answer")  # 웹 검색 -> 답변
-workflow.add_edge("qmaker", "retrieve")  # 웹 검색 -> 답변
+workflow.add_edge("qmaker", "q_relevance_check")  # 웹 검색 -> 답변
+
 
 # 조건부 엣지를 추가합니다.
 workflow.add_conditional_edges(
@@ -177,14 +189,27 @@ workflow.add_conditional_edges(
         "no": "retrieve",  # 생성 불가능 하다면
     },
 )
+
 # 조건부 엣지를 추가합니다.
 workflow.add_conditional_edges(
-    "relevance_check",  # 관련성 체크 노드에서 나온 결과를 is_relevant 함수에 전달합니다.
+    "q_relevance_check",  # 관련성 체크 노드에서 나온 결과를 is_relevant 함수에 전달합니다.
+    is_relevant,
+    {
+        "grounded": "retrieve",  # 관련성이 있으면 종료합니다.
+        "notGrounded": "qmaker",  # 관련성이 없으면 다시 답변을 생성합니다.
+        "notSure": "qmaker",  # 관련성 체크 결과가 모호하다면 다시 답변을 생성합니다.
+    },
+)
+
+
+# 조건부 엣지를 추가합니다.
+workflow.add_conditional_edges(
+    "a_relevance_check",  # 관련성 체크 노드에서 나온 결과를 is_relevant 함수에 전달합니다.
     is_relevant,
     {
         "grounded": END,  # 관련성이 있으면 종료합니다.
-        "notGrounded": "rewrite",  # 관련성이 없으면 다시 답변을 생성합니다.
-        "notSure": "rewrite",  # 관련성 체크 결과가 모호하다면 다시 답변을 생성합니다.
+        "notGrounded": "retrieve",  # 관련성이 없으면 다시 답변을 생성합니다.
+        "notSure": "retrieve",  # 관련성 체크 결과가 모호하다면 다시 답변을 생성합니다.
     },
 )
 
@@ -201,6 +226,6 @@ config = RunnableConfig(
     recursion_limit=100, configurable={"thread_id": "CORRECTIVE-SEARCH-RAG"}
 )
 inputs = GraphState(
-    text=load_doc("test1.pdf")
+    text=load_doc("배울랑교prj/testcheck.pdf")
 )
 app.invoke(inputs,config=config)

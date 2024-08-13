@@ -50,17 +50,13 @@ def format_task(tasks):
 
 from PyPDF2 import PdfReader
 def load_doc(source_uri):
-    ## initiate PdfReader
     reader = PdfReader(source_uri)
-
-    print(len(reader.pages))
-
     text_all = []
-
     for page in reader.pages:
         text = page.extract_text()
         text_all.append(text)
-    return text_all
+    return "\n".join(text_all)  # 모든 페이지의 텍스트를 하나의 문자열로 결합
+
 
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
